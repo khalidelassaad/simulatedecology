@@ -1,0 +1,471 @@
+#! /Library/Frameworks/Python.framework/Versions/3.4/bin/python3 -u
+from time import sleep
+from random import randint
+SIZE = int(input("What size forest would you like to simulate? (2-30) "))
+if SIZE < 2:
+    SIZE = 2
+if SIZE > 30:
+    SIZE = 30
+DEBUG = 0
+
+if DEBUG==2:
+    ddprint = print
+else:
+    def ddprint(*x):
+        return 0
+
+if DEBUG:
+    dprint = print
+else:
+    def dprint(*x):
+        return 0
+
+class Bear:
+    def __init__(self, row, col, index):
+        self.index = index
+        self.row = row
+        self.col = col
+        self.age = 0
+        self.maws = 0
+    def step(self, F):
+        locations = F.adjacentcoords(self.row,self.col)
+        return locations[randint(0,len(locations)-1)]
+    def wander(self, F):
+        ddprint("-- Bear",self,"wandering from",self.row,self.col)
+        self.age += 1
+        fail = 0
+        for i in range(5):
+            oldrow = self.row
+            oldcol = self.col
+            ddprint("---0",i)
+            p = self.step(F)
+            ddprint("----",p)
+            if F.nobear(p[0],p[1]):
+                ddprint("---1")
+                L = F.getlumberjack(p[0],p[1])
+                self.row = p[0]
+                self.col = p[1]
+                F.grid[oldrow][oldcol].remove(self)
+                F.grid[p[0]][p[1]].add(self)
+                ddprint("---- now at",p)
+                if L:
+                    ddprint("---2")
+                    self.maw(L, F)
+                    break
+            elif fail:
+                ddprint("---3")
+                break
+            else:
+                ddprint("---4")
+                fail = 1
+                continue
+        return
+    def maw(self, L, F):
+        self.maws += 1
+        F.mawcount += 1
+        F.removelumberjack(L.row, L.col)
+        if not F.lumberjacks:
+            F.addrandomlumberjack()
+        return
+
+class Lumberjack:
+    def __init__(self, row, col, index):
+        self.index = index
+        self.row = row
+        self.col = col
+        self.age = 0
+        self.chops = 0
+    def step(self, F):
+        locations = F.adjacentcoords(self.row,self.col)
+        return locations[randint(0,len(locations)-1)]
+    def wander(self, F):
+        ddprint("-- Lumberjack",self,"wandering from",self.row,self.col)
+        self.age += 1
+        fail = 0
+        for i in range(3):
+            oldrow = self.row
+            oldcol = self.col
+            ddprint("---0",i)
+            p = self.step(F)
+            ddprint("----",p)
+            if F.nolumberjack(p[0],p[1]) and F.nobear(p[0],p[1]):
+                ddprint("---1")
+                T = F.gettree(p[0],p[1])
+                self.row = p[0]
+                self.col = p[1]
+                F.grid[oldrow][oldcol].remove(self)
+                F.grid[p[0]][p[1]].add(self)
+                ddprint("---- now at",p)
+                if T and T.status:
+                    ddprint("---2")
+                    self.chop(T, F)
+                    break
+            elif fail:
+                ddprint("---3")
+                break
+            else:
+                ddprint("---4")
+                fail = 1
+                continue
+        return
+    def chop(self, T, F):
+        self.chops += 1
+        F.choptree(T.row, T.col)
+        return
+
+
+class Tree:
+    def __init__(self, row, col, index):
+        self.index = index
+        self.row = row
+        self.col = col
+        self.age = 0
+        self.status = 0 #0 sapling, 1 tree, 2 elder
+    def grow(self):
+        self.age += 1
+        ddprint("--Aging", self, "to age", self.age)
+        if self.age < 12:
+            self.status = 0
+        elif self.age < 120:
+            self.status = 1
+        else:
+            self.status = 2
+    def symbol(self):
+        if self.status == 0:
+            return "s"
+        elif self.status == 1:
+            return "t"
+        else:
+            return "T"
+    def plant(self, F):
+        coords = 0
+        if self.status:
+            L = F.adjacenttreeless(self.row,self.col)
+            dprint("---",L)
+            if L and randint(0,10//self.status)==0:
+                coords = L[randint(0,len(L)-1)]
+        return coords
+        
+
+
+class Forest:
+    def __init__(self, N):
+        self.TREEINDEX = 0
+        self.LUMBERJACKINDEX = 0
+        self.BEARINDEX = 0
+        self.saplingcount = 0
+        self.chopcount = 0
+        self.mawcount = 0
+        self.month = 0
+        self.year = 0
+        self.grid = []
+        self.bears = dict()
+        self.lumberjacks = dict()
+        self.trees = dict()
+        self.size = N
+        self.empty_char = " "
+        self._scale = "  "
+        for x in range(N):
+            self.grid.append([])
+            for y in range(N):
+                self.grid[x].append(set())
+            self._scale = self._scale + "{:2}".format(x)
+        dprint("--Forest of size",N,"created")
+    def symbol(self, row, col):
+        s1 = self.gettree(row,col)
+        s2 = self.getlumberjack(row,col)
+        s3 = self.getbear(row,col)
+        if s3:
+            return "B"
+        if s2:
+            return "L"
+        if s1:
+            return s1.symbol()
+        return self.empty_char
+    def draw(self):
+        dprint("--Drawing Forest")
+        rs = "Month " + str(self.month) + "\n"
+        rs = rs + self._scale + "\n"
+        i = 0
+        for row in self.grid:
+            rs = rs + "{:2} ".format(i)
+            j = 0
+            for col in row:
+                s = self.symbol(i,j)
+                if s == "s":
+                    color = "\033[92m"
+                elif s == "t":
+                    color = "\033[92m"
+                elif s == "T":
+                    color = "\033[92m"
+                elif s == "L":
+                    color = "\033[93m"
+                elif s == "B":
+                    color = "\033[91m"
+                elif s == self.empty_char:
+                    color = "\033[0m"
+                endcolor = "\033[0m"
+                rs = rs+color+self.symbol(i,j)+endcolor+" "
+                j += 1
+            rs = rs + "\n"
+            i += 1
+        print(rs)
+        return
+    def newbear(self, row, col):
+        i = self.BEARINDEX
+        self.bears[i] = Bear(row, col, i)
+        self.grid[row][col].add(self.bears[i])
+        dprint("--Bear placed at row",row,"col",col,"index",i)
+        self.BEARINDEX += 1
+    def newlumberjack(self, row, col):
+        i = self.LUMBERJACKINDEX
+        self.lumberjacks[i] = Lumberjack(row, col, i)
+        self.grid[row][col].add(self.lumberjacks[i])
+        dprint("--Lumberjack placed at row",row,"col",col,"index",i)
+        self.LUMBERJACKINDEX += 1
+    def newtree(self, row, col):
+        i = self.TREEINDEX
+        self.trees[i] = Tree(row, col, i)
+        self.grid[row][col].add(self.trees[i])
+        dprint("--Tree placed at row",row,"col",col,"index",i)
+        self.TREEINDEX += 1
+    def removebear(self, row, col):
+        dprint("--Removing bear at row",row,"col",col)
+        B = self.getbear(row,col)
+        del self.bears[B.index]
+        self.grid[row][col].remove(B)
+    def removelumberjack(self, row, col):
+        dprint("--Removing lumberjack at row",row,"col",col)
+        L = self.getlumberjack(row,col)
+        del self.lumberjacks[L.index]
+        self.grid[row][col].remove(L)
+    def choptree(self, row, col):
+        dprint("--Chopping tree at row",row,"col",col)
+        T = self.gettree(row,col)
+        del self.trees[T.index]
+        self.grid[row][col].remove(T)
+        self.chopcount += 1
+    def adjacentcoords(self,row,col):
+        L = []
+        for x in range(-1,2):
+            for y in range(-1,2):
+                if x or y:
+                    r = row + x
+                    c = col + y
+                    if r >= 0 and r < self.size:
+                        if c >= 0 and c < self.size:
+                            L.append((r,c))
+        return L
+    def adjacentbearless(self,row,col):
+        coords = self.adjacentcoords(row,col)
+        B = []
+        for coord in coords:
+            if self.nobear(coord[0],coord[1]):
+                B.append(coord)
+        return B
+    def adjacentlumberjackless(self,row,col):
+        coords = self.adjacentcoords(row,col)
+        L = []
+        for coord in coords:
+            if self.nolumberjack(coord[0],coord[1]):
+                L.append(coord)
+        return L
+    def adjacenttreeless(self,row,col):
+        coords = self.adjacentcoords(row,col)
+        T = []
+        for coord in coords:
+            if self.notree(coord[0],coord[1]):
+                T.append(coord)
+        return T
+
+
+    def tick(self):
+        self.month += 1
+        dprint("--Tick", self.month)
+        dprint("--Tree Count", len(self.trees))
+        P = set()
+        for T in self.trees.values():
+            T.grow()
+            p = T.plant(self)
+            if p:
+                P.add(p)
+        dprint("----",P)
+        for coords in P:
+            F.newtree(coords[0],coords[1])
+            self.saplingcount += 1
+        for L in self.lumberjacks.values():
+            L.wander(self)
+        for B in self.bears.values():
+            B.wander(self)
+        if not self.month % 12:
+            self.yearly()
+    def removerandombear(self):
+        bears = list(self.bears.keys())
+        bearindex = bears[randint(0,len(bears)-1)]
+        B = self.bears[bearindex]
+        self.grid[B.row][B.col].remove(B)
+        del self.bears[bearindex]
+    def removerandomlumberjack(self):
+        lumberjacks = list(self.lumberjacks.keys())
+        lumberjackindex = lumberjacks[randint(0,len(lumberjacks)-1)]
+        L = self.lumberjacks[lumberjackindex]
+        self.grid[L.row][L.col].remove(L)
+        del self.lumberjacks[lumberjackindex]
+    def addrandombear(self):
+        coords = []
+        for x in range(self.size):
+            for y in range(self.size):
+                if self.nolumberjack(x,y) and self.nobear(x,y):
+                    coords.append((x,y))
+        coord = coords[randint(0,len(coords)-1)]
+        self.newbear(coord[0],coord[1])
+    def addrandomlumberjack(self):
+        coords = []
+        for x in range(self.size):
+            for y in range(self.size):
+                if self.nolumberjack(x,y) and self.nobear(x,y):
+                    coords.append((x,y))
+        coord = coords[randint(0,len(coords)-1)]
+        self.newlumberjack(coord[0],coord[1])
+        
+    def yearly(self):
+        dprint("--Yearly")
+        print("Year",self.year,"Report:")
+        self.year += 1
+        print("  Number of new trees planted: {:2}".format(\
+                self.saplingcount))
+        print("  Number of trees chopped:     {:2}".format(\
+                self.chopcount))
+        print("  Number of lumberjacks maw'd: {:2}".format(\
+                self.mawcount))
+        print("  Populations:")
+        lp = len(self.lumberjacks.values())
+        bp = len(self.bears.values())
+        tp = [0,0,0]
+        for T in self.trees.values():
+            tp[T.status] = tp[T.status] + 1
+        print("  Saplings  Trees  Elders  Lumberjacks  Bears")
+        print(("  {0:8}  {1:5}  {2:6}  {3:11}  {4:5}")\
+                .format(tp[0],tp[1],tp[2],lp,bp))
+        print("  Events:") 
+        if self.mawcount:
+            print("  --Due to a maw'ing incident, a bear was removed!")
+            self.removerandombear()
+        else:
+            print("  --No maw'ings this year! A new bear is born!")
+            self.addrandombear()
+        if self.chopcount < lp:
+            if lp > 1:
+                print("  --Not enough lumber produced! A lumberjack is fired!")
+                self.removerandomlumberjack()
+        else:
+            newhires=((self.chopcount - lp)//lp)
+            print("  --Lumber surplus!",newhires,"lumberjacks hired!")
+            for i in range(newhires):
+                self.addrandomlumberjack()
+        self.mawcount = 0
+        self.saplingcount = 0
+        self.chopcount = 0
+        return
+
+    def getbear(self, row, col):
+        s1 = set(self.bears.values())
+        s2 = self.grid[row][col].intersection(s1)
+        if s2:
+            return s2.pop()
+        else:
+            return 0
+    def getlumberjack(self, row, col):
+        s1 = set(self.lumberjacks.values())
+        s2 = self.grid[row][col].intersection(s1)
+        if s2:
+            return s2.pop()
+        else:
+            return 0
+    def gettree(self, row, col):
+        s1 = set(self.trees.values())
+        s2 = self.grid[row][col].intersection(s1)
+        if s2:
+            return s2.pop()
+        else:
+            return 0
+    def notree(self,row,col):
+        return not bool(self.gettree(row,col))
+    def nolumberjack(self,row,col):
+        return not bool(self.getlumberjack(row,col))
+    def nobear(self,row,col):
+        return not bool(self.getbear(row,col))
+    def emptytile(self,row,col):
+        return self.notree(row,col) and self.nolumberjack(row,col) and \
+                self.nobear(row,col)
+    def initbears(self):
+        s = (self.size*self.size)//50
+        dprint("--Placing",s,"initial bears")
+        l = []
+        for x in range(self.size):
+            for y in range(self.size):
+                if self.emptytile(x,y):
+                    l.append((x,y))
+        if not s:
+            s = 1
+        for i in range(s):
+            z = randint(0, len(l)-1)
+            w = l[z]
+            if not self.getbear(w[0],w[1]):
+                self.newbear(w[0],w[1])
+            l.remove(w)
+        return
+    def initlumberjacks(self):
+        s = (self.size*self.size)//10
+        dprint("--Placing",s,"initial lumberjacks")
+        l = []
+        for x in range(self.size):
+            for y in range(self.size):
+                if self.emptytile(x,y):
+                    l.append((x,y))
+        if not s:
+            s = 1
+        for i in range(s):
+            z = randint(0, len(l)-1)
+            w = l[z]
+            if not self.getlumberjack(w[0],w[1]):
+                self.newlumberjack(w[0],w[1])
+            l.remove(w)
+        return
+    def inittrees(self):
+        dprint("--Planting",(self.size*self.size)//2,"initial trees")
+        l = []
+        for x in range(self.size):
+            for y in range(self.size):
+                l.append((x,y))
+        for i in range((self.size*self.size)//2):
+            z = randint(0, len(l)-1)
+            w = l[z]
+            if not self.gettree(w[0],w[1]):
+                self.newtree(w[0],w[1])
+            l.remove(w)
+        a = (0,12,120)
+        for t in self.trees.values():
+            r = randint(0,2)
+            t.status = r
+            t.age = a[r]
+        return
+
+        
+F=Forest(SIZE)
+F.inittrees()
+F.initlumberjacks()
+F.initbears()
+F.draw()
+while True:
+    try:
+        sleep(0.05)
+        F.tick()
+        F.draw()
+        if not F.trees:
+            print("DEFORESTATION COMPLETE!")
+            break
+    except KeyboardInterrupt:
+        print()
+        break
+
